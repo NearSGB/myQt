@@ -9,16 +9,18 @@
 #include "opencv2/imgproc.hpp"
 #include <QtWidgets/QMainWindow>
 #include <string>
+#include <windows.h>
 #include <QPaintEvent>
 #include <QTimer>
 #include <QPainter>
 #include <QPixmap>
 #include <QLabel>
 #include <QImage>
+#include <tchar.h>
+
 using namespace cv;
 using namespace std;
 constexpr int camera_num = 4, interval = 60;
-constexpr int camera_w = 960, camera_h = 540;
 
 namespace Ui {
 class MainWindow;
@@ -43,15 +45,19 @@ private slots:
     void on_write_clicked();
 
 private:
-
+    char run[8] = {(char)1, (char)5, (char)0, (char)0, (char)0xff, (char)0, (char)0x8c, (char)0x3a};
+    char stop[8] = {(char)1, (char)5, (char)0, (char)0, (char)0, (char)0, (char)0xcd, (char)0xca};
+    DWORD dwBytesWrite = 8;
     Ui::MainWindow *ui;
     VideoCapture cap[camera_num]; //用来读取视频结构
     QTimer timer;//视频播放的定时器
+    int camera_w = 1920, camera_h = 1080;
     bool isRun = false;
     bool isSaveImages = false;
     bool isSaveVideos = false;
     string str_images_save = "images/";
     string str_videos_save = "videos/";
+    HANDLE hCom;
     int count_interval = 0;
     int timer_save_videos = 5000;
     VideoWriter writer[4];

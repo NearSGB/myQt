@@ -4,6 +4,7 @@
 #include <QMessageBox>
 #include <io.h>
 #include <direct.h>
+#include <cstring>
 using namespace std;
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -11,14 +12,27 @@ MainWindow::MainWindow(QWidget *parent) :
 {
     ui->setupUi(this);
     connect(&timer, SIGNAL(timeout()), this, SLOT(onTimeout()));
-
-
+    hCom = CreateFile(TEXT("COM3"),GENERIC_READ | GENERIC_WRITE,0, NULL,OPEN_EXISTING, 0, NULL);
+    DCB dcb;
+    GetCommState(hCom, &dcb);
+    dcb.BaudRate = 9600;
+    dcb.ByteSize = 8;
+    dcb.Parity = NOPARITY;
+    dcb.StopBits = ONESTOPBIT;
+    SetCommState(hCom, &dcb);
+    PurgeComm(hCom, PURGE_TXCLEAR | PURGE_RXCLEAR);
 }
 
 MainWindow::~MainWindow()
 {
-    for(int i = 0; i < camera_num; i++)
-        cap[i].release();
+    if(hCom != (HANDLE)-1)
+        CloseHandle(hCom);
+    for(int i = 0; i < camera_num; i++){
+        if(cap[i].isOpened())
+            cap[i].release();
+        if(writer[i].isOpened())
+            writer[i].release();
+    }
     delete ui;
 }
 
@@ -28,17 +42,19 @@ void MainWindow::onTimeout(){
     for(int i = 0; i < camera_num; i++)
         if(cap[i].isOpened()){
             cap[i]>>frame_temp;
+            cv::resize(frame_temp, frame[i], Size(camera_w, camera_h));
             if(isSaveImages){
                 string s = str_images_save+to_string(time(0))+"_"+to_string(i)+".jpg";
-                imwrite(s, frame_temp);
+                imwrite(s, frame[i]);
             }
             if(isSaveVideos){
+                writer[i].write(frame[i]);
                 if(count_interval == timer_save_videos/interval){
                     string s = str_videos_save+to_string(time(0))+"_"+to_string(i)+".jpg";
-                    imwrite(s, frame_temp);
+                    imwrite(s, frame[i]);
                 }
             }
-            cv::resize(frame_temp, frame[i], Size(camera_w, camera_h));
+
         }
     if(count_interval == timer_save_videos/interval)
         count_interval = 0;
@@ -58,6 +74,7 @@ void MainWindow::onTimeout(){
 
 void MainWindow::on_run_clicked()
 {
+    //WriteFile(hCom, run, dwBytesWrite, &dwBytesWrite, NULL);
     if(isRun) return;
     isRun = true;
     ui->text_isRun->setTextColor(QColor("green"));
@@ -75,6 +92,7 @@ void MainWindow::on_run_clicked()
 
 void MainWindow::on_stop_clicked()
 {
+    //WriteFile(hCom, stop, dwBytesWrite, &dwBytesWrite, NULL);
     isRun = false;
     isSaveVideos = false;
     isSaveImages = false;
@@ -82,8 +100,8 @@ void MainWindow::on_stop_clicked()
     for(int i = 0; i < camera_num; i++){
         if(cap[i].isOpened())
             cap[i].release();
-//        if(writer[i].isOpened())
-//            writer[i].release();
+        if(writer[i].isOpened())
+            writer[i].release();
     }
     ui->text_isRun->setTextColor(QColor("red"));
     ui->text_isRun->setPlainText(QString("  停止"));
@@ -109,6 +127,10 @@ void MainWindow::on_write_clicked()
             m.exec();
             return;
         }
+        camera_w = ui->save_width->toPlainText().toInt();
+        camera_h = ui->save_height->toPlainText().toInt();
+        for(int i = 0; i < camera_num; i++)
+            frame[i] = Mat(Size(camera_w, camera_h), CV_8UC3, Scalar(0,0,0));
         timer_save_videos = 1000*t;
         if(_access(str_images_save.c_str(), 0) == -1)
             mkdir(str_images_save.c_str());
@@ -119,14 +141,13 @@ void MainWindow::on_write_clicked()
         ui->text_isSave->setPlainText(QString("正在保存"));
     }
 
-//    for(int i = 0; i < camera_num; i++){
-//        if(cap[i].isOpened()){
-//            string s = "E:/QtCode/videos/"+to_string(time(0))+"_"+to_string(i)+".avi";
-//            if(!writer[i].isOpened())
-//                writer[i] = VideoWriter(s, CV_FOURCC('M', 'J', 'P', 'G'), 24.0, Size(camera_w, camera_h));
-
-//        }
-//    }
+    for(int i = 0; i < camera_num; i++){
+        if(cap[i].isOpened()){
+            string s = str_videos_save + to_string(time(0))+"_"+to_string(i)+".avi";
+            if(!writer[i].isOpened())
+                writer[i] = VideoWriter(s, CV_FOURCC('M', 'J', 'P', 'G'), 15.0, Size(camera_w, camera_h));
+        }
+    }
 
 }
 QImage MainWindow::MatToQImage(const cv::Mat& mat)
